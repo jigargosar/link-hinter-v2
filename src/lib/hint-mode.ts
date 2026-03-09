@@ -93,29 +93,38 @@ function handleInactiveKey(event: KeyboardEvent): void {
 function handleActiveKey(event: KeyboardEvent): void {
     if (modeState.status !== 'active') return
 
-    event.preventDefault()
-    event.stopPropagation()
+    // Let browser handle Ctrl/Alt/Meta combos (Ctrl+Shift+R, Ctrl+T, etc.)
+    if (event.ctrlKey || event.altKey || event.metaKey) return
 
     if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
         deactivate()
         return
     }
 
     if (event.key === 'Backspace') {
+        event.preventDefault()
+        event.stopPropagation()
         handleBackspace()
         return
     }
 
     // Re-pressing the hotkey rescans
     if (event.key === settings.hotkey && modeState.typedChars.length === 0) {
+        event.preventDefault()
+        event.stopPropagation()
         deactivate()
         activate()
         return
     }
 
-    // Only process valid charset characters
-    if (settings.charset.includes(event.key)) {
-        handleCharInput(event.key, event.shiftKey)
+    // Only process valid charset characters (lowercase to handle Shift)
+    const key = event.key.toLowerCase()
+    if (settings.charset.includes(key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        handleCharInput(key, event.shiftKey)
     }
 }
 
@@ -135,7 +144,8 @@ function activate(): void {
         return
     }
 
-    const labels = generateLabels(elements.length, settings.charset)
+    const charsetWithoutHotkey = settings.charset.replace(settings.hotkey, '')
+    const labels = generateLabels(elements.length, charsetWithoutHotkey)
 
     const currentHints = new Map<Label, HTMLElement | SVGElement>()
     const hintPairs: Array<{ element: HTMLElement | SVGElement; label: Label }> = []
@@ -189,9 +199,13 @@ function handleBackspace(): void {
 // -- Private: match trigger --
 
 function triggerMatch(element: HTMLElement | SVGElement, shiftHeld: boolean): void {
-    if (shiftHeld && isAnchorWithHref(element)) {
-        const url = (element as HTMLAnchorElement).href
-        browser.runtime.sendMessage({ type: 'OPEN_NEW_TAB', url }).catch(console.error)
+    const anchor = findAnchorAncestor(element)
+
+    if (shiftHeld && anchor) {
+        const originalTarget = anchor.target
+        anchor.target = '_blank'
+        anchor.click()
+        anchor.target = originalTarget
     } else {
         ;(element as HTMLElement).click()
     }
@@ -199,8 +213,15 @@ function triggerMatch(element: HTMLElement | SVGElement, shiftHeld: boolean): vo
     deactivate()
 }
 
-function isAnchorWithHref(element: HTMLElement | SVGElement): boolean {
-    return element.tagName === 'A' && (element as HTMLAnchorElement).hasAttribute('href')
+function findAnchorAncestor(element: Element): HTMLAnchorElement | null {
+    let current: Element | null = element
+    while (current) {
+        if (current.tagName === 'A' && (current as HTMLAnchorElement).hasAttribute('href')) {
+            return current as HTMLAnchorElement
+        }
+        current = current.parentElement
+    }
+    return null
 }
 
 // -- Private: guards --
