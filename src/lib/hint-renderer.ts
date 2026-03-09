@@ -6,6 +6,8 @@ type Milliseconds = number
 const SHADOW_HOST_ID = 'link-hinter-shadow-host'
 const MAX_Z_INDEX = 2147483647
 const TOAST_DURATION: Milliseconds = 1000
+const MONOSPACE_CHAR_WIDTH_RATIO = 0.6
+const LABEL_GAP: Pixels = 2
 
 export interface HintStyle {
     background: CssColor
@@ -75,8 +77,27 @@ export function renderHints(
 
     clearOverlays()
 
+    const placed: Array<{ left: Pixels; top: Pixels; right: Pixels; bottom: Pixels }> = []
+    const labelHeight = style.fontSize + style.padding * 2
+    const charWidth = style.fontSize * MONOSPACE_CHAR_WIDTH_RATIO
+
     for (const { element, label } of elements) {
-        const overlay = createOverlayElement(element, label, style)
+        const rect = element.getBoundingClientRect()
+        const labelWidth = label.length * charWidth + style.padding * 2
+
+        let left = rect.left
+        const top = rect.top
+
+        // Nudge right if this label would overlap a previously placed label
+        for (const box of placed) {
+            if (rectsOverlap(left, top, left + labelWidth, top + labelHeight, box)) {
+                left = box.right + LABEL_GAP
+            }
+        }
+
+        placed.push({ left, top, right: left + labelWidth, bottom: top + labelHeight })
+
+        const overlay = createOverlayElementAt(left, top, label, style)
         state.overlayContainer.appendChild(overlay.element)
         state.overlays.set(label, overlay)
     }
@@ -190,18 +211,28 @@ export function getOverlayForLabel(label: Label): HintOverlay | undefined {
 
 // -- Private helpers --
 
-function createOverlayElement(
-    target: HTMLElement | SVGElement,
+function rectsOverlap(
+    aLeft: Pixels,
+    aTop: Pixels,
+    aRight: Pixels,
+    aBottom: Pixels,
+    b: { left: Pixels; top: Pixels; right: Pixels; bottom: Pixels },
+): boolean {
+    return aLeft < b.right && aRight > b.left && aTop < b.bottom && aBottom > b.top
+}
+
+function createOverlayElementAt(
+    left: Pixels,
+    top: Pixels,
     label: Label,
     style: HintStyle,
 ): HintOverlay {
-    const rect = target.getBoundingClientRect()
     const overlay = document.createElement('div')
 
     applyStyles(overlay, {
         position: 'fixed',
-        left: rect.left + 'px',
-        top: rect.top + 'px',
+        left: left + 'px',
+        top: top + 'px',
         background: style.background,
         color: style.textColor,
         fontSize: style.fontSize + 'px',

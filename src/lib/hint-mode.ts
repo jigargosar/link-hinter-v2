@@ -242,7 +242,7 @@ function triggerMatch(element: HTMLElement | SVGElement, shiftHeld: boolean): vo
         const url = (element as HTMLAnchorElement).href
         browser.runtime.sendMessage({ type: 'OPEN_NEW_TAB', url }).catch(console.error)
     } else {
-        element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+        ;(element as HTMLElement).click()
     }
 
     deactivate()
