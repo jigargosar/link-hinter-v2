@@ -15,8 +15,8 @@ export default function App() {
     const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
     const [loaded, setLoaded] = useState(false)
     const [saved, setSaved] = useState(false)
-    const debounceRef = useRef<ReturnType<typeof setTimeout>>()
-    const savedTimerRef = useRef<ReturnType<typeof setTimeout>>()
+    const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+    const savedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
     useEffect(() => {
         loadSettings().then((s) => {
