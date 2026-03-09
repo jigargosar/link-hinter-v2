@@ -1,29 +1,73 @@
-import { tabbable } from 'tabbable'
+import { focusable } from 'tabbable'
 
 type InteractiveElement = HTMLElement | SVGElement
 
+const CLICKABLE_SELECTOR = [
+    'a[href]',
+    'button',
+    'input:not([type="hidden"])',
+    'select',
+    'textarea',
+    '[role="button"]',
+    '[role="link"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
+    '[onclick]',
+    'summary',
+].join(',')
+
 /**
  * Scan the viewport for interactive elements, including those inside open shadow roots.
- * Returns only elements whose bounding rects are within (or partially within) the visible viewport.
+ * Combines focusable() results with a querySelector pass for clickable elements
+ * that might not be natively focusable.
  */
 export function scanViewport(): InteractiveElement[] {
-    const elements = collectTabbableElements(document)
-    return elements.filter(isInViewport)
-}
+    const seen = new Set<Element>()
+    const results: InteractiveElement[] = []
 
-function collectTabbableElements(root: Document | ShadowRoot): InteractiveElement[] {
-    const container = root instanceof Document ? root.documentElement : root.host
-    const results = tabbable(container, {
-        getShadowRoot: openShadowRootOrSkip,
-    })
+    const container = document.documentElement
+
+    // Pass 1: all focusable elements (superset of tabbable — includes tabindex="-1")
+    for (const el of focusable(container, { getShadowRoot: openShadowRootOrSkip })) {
+        if (!seen.has(el) && isInViewport(el)) {
+            seen.add(el)
+            results.push(el)
+        }
+    }
+
+    // Pass 2: clickable elements that focusable() may miss
+    for (const el of document.querySelectorAll<HTMLElement>(CLICKABLE_SELECTOR)) {
+        if (!seen.has(el) && isInViewport(el)) {
+            seen.add(el)
+            results.push(el)
+        }
+    }
+
+    // Pass 3: traverse open shadow roots for clickable elements
+    collectFromShadowRoots(container, seen, results)
+
     return results
 }
 
-/**
- * Callback for tabbable's getShadowRoot option.
- * Returns the open shadow root if available, allowing tabbable to traverse it.
- * Returns false for closed shadow roots (skip them).
- */
+function collectFromShadowRoots(
+    root: Element,
+    seen: Set<Element>,
+    results: InteractiveElement[],
+): void {
+    if (root.shadowRoot) {
+        for (const el of root.shadowRoot.querySelectorAll<HTMLElement>(CLICKABLE_SELECTOR)) {
+            if (!seen.has(el) && isInViewport(el)) {
+                seen.add(el)
+                results.push(el)
+            }
+        }
+    }
+
+    for (const child of root.children) {
+        collectFromShadowRoots(child, seen, results)
+    }
+}
+
 function openShadowRootOrSkip(node: HTMLElement | SVGElement): ShadowRoot | false {
     return node.shadowRoot ?? false
 }
@@ -31,8 +75,27 @@ function openShadowRootOrSkip(node: HTMLElement | SVGElement): ShadowRoot | fals
 function isInViewport(element: InteractiveElement): boolean {
     const rect = element.getBoundingClientRect()
 
-    if (rect.width === 0 && rect.height === 0) return false
+    if (rect.width === 0 && rect.height === 0) {
+        // display:contents or zero-box elements — check individual client rects
+        const clientRects = element.getClientRects()
+        if (clientRects.length > 0) {
+            return isRectInViewport(clientRects[0])
+        }
 
+        // Fallback: check first child's rect (e.g. <a> wrapping a block child)
+        const firstChild = element.firstElementChild
+        if (firstChild) {
+            const childRect = firstChild.getBoundingClientRect()
+            return childRect.width > 0 && childRect.height > 0 && isRectInViewport(childRect)
+        }
+
+        return false
+    }
+
+    return isRectInViewport(rect)
+}
+
+function isRectInViewport(rect: DOMRect): boolean {
     return (
         rect.bottom > 0 &&
         rect.right > 0 &&

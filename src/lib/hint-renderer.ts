@@ -82,11 +82,11 @@ export function renderHints(
     const charWidth = style.fontSize * MONOSPACE_CHAR_WIDTH_RATIO
 
     for (const { element, label } of elements) {
-        const rect = element.getBoundingClientRect()
+        const pos = getElementPosition(element)
         const labelWidth = label.length * charWidth + style.padding * 2
 
-        let left = rect.left
-        const top = rect.top
+        let left = pos.left
+        const top = pos.top
 
         // Nudge right if this label would overlap a previously placed label
         for (const box of placed) {
@@ -276,6 +276,29 @@ function updateOverlayText(
     } else {
         overlayEl.textContent = label
     }
+}
+
+function getElementPosition(element: HTMLElement | SVGElement): { left: Pixels; top: Pixels } {
+    const rect = element.getBoundingClientRect()
+
+    if (rect.width > 0 || rect.height > 0) {
+        return { left: rect.left, top: rect.top }
+    }
+
+    // display:contents or zero-box — try client rects
+    const clientRects = element.getClientRects()
+    if (clientRects.length > 0) {
+        return { left: clientRects[0].left, top: clientRects[0].top }
+    }
+
+    // Fallback: first child's position
+    const firstChild = element.firstElementChild
+    if (firstChild) {
+        const childRect = firstChild.getBoundingClientRect()
+        return { left: childRect.left, top: childRect.top }
+    }
+
+    return { left: rect.left, top: rect.top }
 }
 
 function applyStyles(element: HTMLElement, styles: Record<string, string>): void {

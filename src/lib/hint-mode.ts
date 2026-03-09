@@ -1,12 +1,9 @@
 import { scanViewport } from './scanner'
 import { generateLabels } from './labels'
-import { computeLayers, type LayeredElements } from './overlap'
 import {
     createShadowContainer,
     renderHints,
     updateHintFiltering,
-    showLayerIndicator,
-    hideLayerIndicator,
     showToast,
     clearOverlays,
     destroyShadowContainer,
@@ -15,7 +12,6 @@ import {
 
 type Label = string
 type HintChar = string
-type LayerIndex = number
 
 interface HintSettings {
     hotkey: string
@@ -41,14 +37,13 @@ const DEFAULT_SETTINGS: HintSettings = {
     hintFontFamily: 'monospace',
 }
 
+const TOAST_AUTO_DESTROY_DELAY = 1100
+
 type HintModeState =
     | { status: 'inactive' }
     | {
           status: 'active'
-          layeredElements: LayeredElements
-          currentLayerIndex: LayerIndex
           typedChars: string
-          /** Maps label -> element for the current layer */
           currentHints: Map<Label, HTMLElement | SVGElement>
       }
 
@@ -70,7 +65,6 @@ export function deactivate(): void {
 
     modeState = { status: 'inactive' }
     clearOverlays()
-    hideLayerIndicator()
     destroyShadowContainer()
 }
 
@@ -112,11 +106,6 @@ function handleActiveKey(event: KeyboardEvent): void {
         return
     }
 
-    if (event.key === ' ') {
-        handleSpaceCycleLayer()
-        return
-    }
-
     // Re-pressing the hotkey rescans
     if (event.key === settings.hotkey && modeState.typedChars.length === 0) {
         deactivate()
@@ -138,40 +127,34 @@ function activate(): void {
     if (elements.length === 0) {
         createShadowContainer()
         showToast('No hints')
-        // Auto-destroy after toast disappears
         window.setTimeout(() => {
             if (modeState.status === 'inactive') {
                 destroyShadowContainer()
             }
-        }, 1100)
+        }, TOAST_AUTO_DESTROY_DELAY)
         return
     }
 
-    const layeredElements = computeLayers(elements)
-    const firstLayerElements = layeredElements.layers[0]
-    const labels = generateLabels(firstLayerElements.length, settings.charset)
+    const labels = generateLabels(elements.length, settings.charset)
 
     const currentHints = new Map<Label, HTMLElement | SVGElement>()
     const hintPairs: Array<{ element: HTMLElement | SVGElement; label: Label }> = []
 
-    for (let i = 0; i < firstLayerElements.length; i++) {
+    for (let i = 0; i < elements.length; i++) {
         const label = labels[i]
-        const element = firstLayerElements[i]
+        const element = elements[i]
         currentHints.set(label, element)
         hintPairs.push({ element, label })
     }
 
     modeState = {
         status: 'active',
-        layeredElements,
-        currentLayerIndex: 0,
         typedChars: '',
         currentHints,
     }
 
     createShadowContainer()
     renderHints(hintPairs, buildHintStyle())
-    showLayerIndicator(1, layeredElements.layerCount)
 }
 
 // -- Private: char input --
@@ -201,38 +184,6 @@ function handleBackspace(): void {
 
     modeState.typedChars = modeState.typedChars.slice(0, -1)
     updateHintFiltering(modeState.typedChars, buildHintStyle())
-}
-
-// -- Private: layer cycling --
-
-function handleSpaceCycleLayer(): void {
-    if (modeState.status !== 'active') return
-
-    const { layeredElements, currentLayerIndex } = modeState
-    if (layeredElements.layerCount <= 1) return
-
-    // Wrap back to layer 0 after the last layer
-    const nextLayerIndex: LayerIndex = (currentLayerIndex + 1) % layeredElements.layerCount
-    const nextLayerElements = layeredElements.layers[nextLayerIndex]
-    const labels = generateLabels(nextLayerElements.length, settings.charset)
-
-    const currentHints = new Map<Label, HTMLElement | SVGElement>()
-    const hintPairs: Array<{ element: HTMLElement | SVGElement; label: Label }> = []
-
-    for (let i = 0; i < nextLayerElements.length; i++) {
-        const label = labels[i]
-        const element = nextLayerElements[i]
-        currentHints.set(label, element)
-        hintPairs.push({ element, label })
-    }
-
-    modeState.currentLayerIndex = nextLayerIndex
-    modeState.typedChars = ''
-    modeState.currentHints = currentHints
-
-    clearOverlays()
-    renderHints(hintPairs, buildHintStyle())
-    showLayerIndicator(nextLayerIndex + 1, layeredElements.layerCount)
 }
 
 // -- Private: match trigger --
