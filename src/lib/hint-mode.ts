@@ -3,6 +3,7 @@ import { generateLabels } from './labels'
 import {
     createShadowContainer,
     renderHints,
+    repositionOverlays,
     updateHintFiltering,
     showToast,
     clearOverlays,
@@ -50,6 +51,10 @@ type HintModeState =
 let modeState: HintModeState = { status: 'inactive' }
 let settings: HintSettings = { ...DEFAULT_SETTINGS }
 
+function onScroll(): void {
+    repositionOverlays(buildHintStyle())
+}
+
 // -- Public API --
 
 export function handleKeyDown(event: KeyboardEvent): void {
@@ -63,13 +68,10 @@ export function handleKeyDown(event: KeyboardEvent): void {
 export function deactivate(): void {
     if (modeState.status === 'inactive') return
 
+    window.removeEventListener('scroll', onScroll, true)
     modeState = { status: 'inactive' }
     clearOverlays()
     destroyShadowContainer()
-}
-
-export function isActive(): boolean {
-    return modeState.status === 'active'
 }
 
 export function updateSettings(newSettings: Partial<HintSettings>): void {
@@ -165,6 +167,7 @@ function activate(): void {
 
     createShadowContainer()
     renderHints(hintPairs, buildHintStyle())
+    window.addEventListener('scroll', onScroll, true)
 }
 
 // -- Private: char input --

@@ -2,14 +2,9 @@ import type { Message } from '@/lib/messages'
 
 export default defineBackground(() => {
     browser.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
-        switch (message.type) {
-            case 'OPEN_NEW_TAB':
-                browser.tabs.create({ url: message.url, active: false }).then(() => sendResponse())
-                return true
-
-            case 'ACTIVATE':
-                sendActivateToActiveTab().then(() => sendResponse())
-                return true
+        if (message.type === 'ACTIVATE') {
+            sendActivateToActiveTab().then(() => sendResponse())
+            return true
         }
     })
 })

@@ -20,7 +20,8 @@ export interface HintStyle {
 }
 
 interface HintOverlay {
-    element: HTMLDivElement
+    overlayEl: HTMLDivElement
+    targetEl: HTMLElement | SVGElement
     label: Label
 }
 
@@ -29,7 +30,6 @@ interface RendererState {
     shadowRoot: ShadowRoot
     overlayContainer: HTMLDivElement
     overlays: Map<Label, HintOverlay>
-    layerIndicator: HTMLDivElement | null
     toastTimeout: number | null
 }
 
@@ -64,7 +64,6 @@ export function createShadowContainer(): void {
         shadowRoot,
         overlayContainer,
         overlays: new Map(),
-        layerIndicator: null,
         toastTimeout: null,
     }
 }
@@ -88,7 +87,6 @@ export function renderHints(
         let left = pos.left
         const top = pos.top
 
-        // Nudge right if this label would overlap a previously placed label
         for (const box of placed) {
             if (rectsOverlap(left, top, left + labelWidth, top + labelHeight, box)) {
                 left = box.right + LABEL_GAP
@@ -97,9 +95,38 @@ export function renderHints(
 
         placed.push({ left, top, right: left + labelWidth, bottom: top + labelHeight })
 
-        const overlay = createOverlayElementAt(left, top, label, style)
-        state.overlayContainer.appendChild(overlay.element)
-        state.overlays.set(label, overlay)
+        const overlayEl = createOverlayDiv(left, top, label, style)
+        state.overlayContainer.appendChild(overlayEl)
+        state.overlays.set(label, { overlayEl, targetEl: element, label })
+    }
+}
+
+export function repositionOverlays(style: HintStyle): void {
+    if (!state) return
+
+    const placed: Array<{ left: Pixels; top: Pixels; right: Pixels; bottom: Pixels }> = []
+    const labelHeight = style.fontSize + style.padding * 2
+    const charWidth = style.fontSize * MONOSPACE_CHAR_WIDTH_RATIO
+
+    for (const overlay of state.overlays.values()) {
+        if (overlay.overlayEl.style.display === 'none') continue
+
+        const pos = getElementPosition(overlay.targetEl)
+        const labelWidth = overlay.label.length * charWidth + style.padding * 2
+
+        let left = pos.left
+        const top = pos.top
+
+        for (const box of placed) {
+            if (rectsOverlap(left, top, left + labelWidth, top + labelHeight, box)) {
+                left = box.right + LABEL_GAP
+            }
+        }
+
+        placed.push({ left, top, right: left + labelWidth, bottom: top + labelHeight })
+
+        overlay.overlayEl.style.left = left + 'px'
+        overlay.overlayEl.style.top = top + 'px'
     }
 }
 
@@ -110,10 +137,10 @@ export function updateHintFiltering(typedChars: string, style: HintStyle): Label
 
     for (const [label, overlay] of state.overlays) {
         if (typedChars.length > 0 && !label.startsWith(typedChars)) {
-            overlay.element.style.display = 'none'
+            overlay.overlayEl.style.display = 'none'
         } else {
-            overlay.element.style.display = ''
-            updateOverlayText(overlay.element, label, typedChars, style)
+            overlay.overlayEl.style.display = ''
+            updateOverlayText(overlay.overlayEl, label, typedChars, style)
 
             if (label === typedChars) {
                 exactMatch = label
@@ -122,39 +149,6 @@ export function updateHintFiltering(typedChars: string, style: HintStyle): Label
     }
 
     return exactMatch
-}
-
-export function showLayerIndicator(currentLayer: number, totalLayers: number): void {
-    if (!state) return
-
-    hideLayerIndicator()
-
-    if (totalLayers <= 1) return
-
-    const indicator = document.createElement('div')
-    applyStyles(indicator, {
-        position: 'fixed',
-        bottom: '12px',
-        right: '12px',
-        padding: '4px 10px',
-        background: 'rgba(0, 0, 0, 0.7)',
-        color: '#ffffff',
-        fontSize: '12px',
-        fontFamily: 'sans-serif',
-        borderRadius: '4px',
-        pointerEvents: 'none',
-        zIndex: String(MAX_Z_INDEX),
-    })
-    indicator.textContent = 'Layer ' + currentLayer + '/' + totalLayers
-
-    state.shadowRoot.appendChild(indicator)
-    state.layerIndicator = indicator
-}
-
-export function hideLayerIndicator(): void {
-    if (!state || !state.layerIndicator) return
-    state.layerIndicator.remove()
-    state.layerIndicator = null
 }
 
 export function showToast(message: string): void {
@@ -189,7 +183,7 @@ export function clearOverlays(): void {
     if (!state) return
 
     for (const overlay of state.overlays.values()) {
-        overlay.element.remove()
+        overlay.overlayEl.remove()
     }
     state.overlays.clear()
 }
@@ -205,10 +199,6 @@ export function destroyShadowContainer(): void {
     state = null
 }
 
-export function getOverlayForLabel(label: Label): HintOverlay | undefined {
-    return state?.overlays.get(label)
-}
-
 // -- Private helpers --
 
 function rectsOverlap(
@@ -221,12 +211,7 @@ function rectsOverlap(
     return aLeft < b.right && aRight > b.left && aTop < b.bottom && aBottom > b.top
 }
 
-function createOverlayElementAt(
-    left: Pixels,
-    top: Pixels,
-    label: Label,
-    style: HintStyle,
-): HintOverlay {
+function createOverlayDiv(left: Pixels, top: Pixels, label: Label, style: HintStyle): HTMLDivElement {
     const overlay = document.createElement('div')
 
     applyStyles(overlay, {
@@ -250,7 +235,7 @@ function createOverlayElementAt(
 
     overlay.textContent = label
 
-    return { element: overlay, label }
+    return overlay
 }
 
 function updateOverlayText(
@@ -285,13 +270,11 @@ function getElementPosition(element: HTMLElement | SVGElement): { left: Pixels; 
         return { left: rect.left, top: rect.top }
     }
 
-    // display:contents or zero-box — try client rects
     const clientRects = element.getClientRects()
     if (clientRects.length > 0) {
         return { left: clientRects[0].left, top: clientRects[0].top }
     }
 
-    // Fallback: first child's position
     const firstChild = element.firstElementChild
     if (firstChild) {
         const childRect = firstChild.getBoundingClientRect()
