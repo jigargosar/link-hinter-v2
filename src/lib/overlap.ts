@@ -1,10 +1,9 @@
-import RBush, { type BBox } from 'rbush'
+import RBush from 'rbush'
 
 type InteractiveElement = HTMLElement | SVGElement
 type DomIndex = number
 type ZIndex = number
 type LayerIndex = number
-type StackId = number
 
 export interface ElementEntry {
     element: InteractiveElement
