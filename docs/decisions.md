@@ -4,9 +4,9 @@
 
 WXT provides file-based entrypoints, auto-manifest generation, HMR for extensions, and `allFrames` support out of the box. It wraps Vite internally, so we still get Tailwind v4 via `@tailwindcss/vite` plugin. We use `srcDir: 'src'` to keep source separate from config.
 
-## 2. Standalone tsconfig.json (not extending .wxt/tsconfig.json)
+## 2. Extend .wxt/tsconfig.json with ./ prefix
 
-WXT docs recommend `"extends": ".wxt/tsconfig.json"`, but `wxt build` deletes and regenerates `.wxt/` at build start, causing Vite to fail when it reads the tsconfig mid-build. We use a standalone tsconfig with the same compiler options instead.
+WXT generates a base tsconfig at `.wxt/tsconfig.json` via `wxt prepare` (runs as `postinstall`). We extend it with `"./.wxt/tsconfig.json"` (note the `./` prefix) — Vite's `resolveExtends` uses `require.resolve()` which treats paths without `./` as package names, not relative paths. We only override `jsx` to `react-jsx`. Path aliases (`@/*` etc.) are managed by WXT automatically.
 
 ## 3. Shadow DOM for hint overlays (not page DOM)
 
